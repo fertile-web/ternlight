@@ -54,6 +54,13 @@ python smoke_qat_train.py --steps 30 --device cpu   # or cuda
 # report: docs/notes/exp-qat-pack-smoke/
 ```
 
+**Known limitation:** the smoke script builds `StudentEncoder` with RoPE /
+sub-LN kwargs (`pos_encoding`, `use_subln`). Upstream's current
+`training/distill/model.py::StudentEncoder` predates those and will raise
+`TypeError: StudentEncoder.__init__() got an unexpected keyword argument
+'pos_encoding'`. The rest of flash_ternary (pack/matmul/QAT primitives,
+`tests/`) does not depend on `StudentEncoder` and is unaffected.
+
 Optional distill flag (default remains library BitLinear):
 
 ```yaml
