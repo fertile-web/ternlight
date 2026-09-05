@@ -10,7 +10,7 @@ wandb_tags:
 data:
   sources:
     - name: ms_marco
-      hf_dataset: ms_marco
+      hf_dataset: microsoft/ms_marco   # namespaced — newer `datasets` rejects bare "ms_marco"
       hf_config: v2.1
       split: train
       text_field: query
