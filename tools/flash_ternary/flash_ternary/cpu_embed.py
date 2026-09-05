@@ -379,14 +379,18 @@ class PackCpuEmbed(nn.Module):
                     w_q=bl("w_q"),
                     w_k=bl("w_k"),
                     w_v=bl("w_v"),
-                    subln_attn_w=None if Lref.subln_attn_w is None else _np(Lref.subln_attn_w),
-                    subln_attn_b=None if Lref.subln_attn_b is None else _np(Lref.subln_attn_b),
+                    # getattr, not attribute access: fertileweb/soycaporal's
+                    # training/pack/unpack.py::_LayerBlocks has no subln_* fields
+                    # at all (v1 wire format, no sub-LN) — only the first-fork's
+                    # v2/v3 _LayerBlocks does. None here means "not present".
+                    subln_attn_w=None if getattr(Lref, "subln_attn_w", None) is None else _np(Lref.subln_attn_w),
+                    subln_attn_b=None if getattr(Lref, "subln_attn_b", None) is None else _np(Lref.subln_attn_b),
                     w_out=bl("w_out"),
                     ln2_w=_np(Lref.ln2_w),
                     ln2_b=_np(Lref.ln2_b),
                     fc1=bl("fc1"),
-                    subln_ffn_w=None if Lref.subln_ffn_w is None else _np(Lref.subln_ffn_w),
-                    subln_ffn_b=None if Lref.subln_ffn_b is None else _np(Lref.subln_ffn_b),
+                    subln_ffn_w=None if getattr(Lref, "subln_ffn_w", None) is None else _np(Lref.subln_ffn_w),
+                    subln_ffn_b=None if getattr(Lref, "subln_ffn_b", None) is None else _np(Lref.subln_ffn_b),
                     fc2=bl("fc2"),
                 )
             )
@@ -395,7 +399,10 @@ class PackCpuEmbed(nn.Module):
             d_model=h.d_model,
             n_heads=h.n_heads,
             output_dim=h.output_dim,
-            pos_rope=(h.pos_encoding == 1),
+            # fertileweb/soycaporal's Header (v1) has no pos_encoding field —
+            # StudentEncoder has no positional encoding by design (see
+            # training/distill/model.py docstring); default to no RoPE.
+            pos_rope=(getattr(h, "pos_encoding", 0) == 1),
             embedding=ref.embedding.detach().cpu().float().contiguous(),
             layers=layers,
             ln_final_w=ref.ln_final_w.detach().cpu().float().contiguous(),

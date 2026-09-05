@@ -63,8 +63,6 @@ def _clone_student(seed: int = 0) -> StudentEncoder:
         ffn_dim=128,
         output_dim=32,
         dropout=0.0,
-        pos_encoding="none",
-        use_subln=False,
     )
 
 
@@ -176,7 +174,7 @@ def main() -> int:
     ap.add_argument(
         "--out",
         type=Path,
-        default=_REPO_ROOT / "docs" / "notes" / "exp-qat-pack-smoke" / "summary-latest.json",
+        default=ROOT / ".smoke-summary.json",
     )
     ap.add_argument("--cos-gate", type=float, default=0.999)
     ap.add_argument("--max-abs-gate", type=float, default=5e-3)

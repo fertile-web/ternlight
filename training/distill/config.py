@@ -9,7 +9,7 @@ blocks ahead of time; flesh them out when implementing those phases.
 """
 
 from pathlib import Path
-from typing import Optional
+from typing import Literal, Optional
 
 import yaml
 from pydantic import BaseModel, ConfigDict, Field, model_validator
@@ -84,6 +84,14 @@ class TrainConfig(BaseModel):
     enable_qat:        bool  = False
     qat_warmup_epochs: int   = 0
     contrastive_w:     float = 0.0
+
+    # QAT backend (Phase 3 only, opt-in). "bitlinear" (default) is the
+    # schneiderkamplab/bitlinear library. "flash_qat" swaps in
+    # tools/flash_ternary's QATBitLinear instead — same STE math contract,
+    # with qat_matmul="pack" additionally exercising the 2-bit wire codec on
+    # the train path. See tools/flash_ternary/README.md.
+    qat_backend:       Literal["bitlinear", "flash_qat"] = "bitlinear"
+    qat_matmul:        Literal["dense", "pack"]          = "dense"
 
     # Relational (similarity-matrix) distillation — matches the teacher's
     # within-batch pairwise-cosine geometry. 0.0 disables (all pre-existing

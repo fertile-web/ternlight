@@ -30,6 +30,10 @@ def _ensure_pack_path():
         sys.path.insert(0, str(pack))
 
 
+def _opt_to(t: torch.Tensor | None, device) -> torch.Tensor | None:
+    return None if t is None else t.to(device)
+
+
 def _rotate_half(x: torch.Tensor) -> torch.Tensor:
     x1, x2 = x.chunk(2, dim=-1)
     return torch.cat((-x2, x1), dim=-1)
@@ -132,19 +136,27 @@ class PackCudaEmbed(nn.Module):
         h = ref.header
         dev = torch.device(device)
         emb_packed = emb_scales = embedding = None
-        if h.embedding_format == 3:  # EMB_INT4 — keep packed on GPU
-            from unpack import (  # type: ignore
-                HEADER_SIZE,
-                SHA256_SIZE,
-                decode_embedding_int4_packed,
-            )
-
-            body = path.read_bytes()[:-SHA256_SIZE]
-            packed, scales, _ = decode_embedding_int4_packed(
-                body, HEADER_SIZE, h.vocab_size, h.d_model
-            )
-            emb_packed = packed.to(dev)
-            emb_scales = scales.to(dev)
+        if h.embedding_format == 3:  # EMB_INT4 — keep packed on GPU if available
+            try:
+                from unpack import (  # type: ignore
+                    HEADER_SIZE,
+                    SHA256_SIZE,
+                    decode_embedding_int4_packed,
+                )
+            except ImportError:
+                # fertileweb/soycaporal's training/pack/unpack.py only has the
+                # eager decode_embedding_int4 (dequantizes to fp32 up front) —
+                # the packed/lazy-dequant path is a first-fork-only VRAM
+                # optimization. Fall back to the already-dequantized embedding
+                # UnpackedModel.from_bin() built above (same values, more VRAM).
+                embedding = ref.embedding.to(dev)
+            else:
+                body = path.read_bytes()[:-SHA256_SIZE]
+                packed, scales, _ = decode_embedding_int4_packed(
+                    body, HEADER_SIZE, h.vocab_size, h.d_model
+                )
+                emb_packed = packed.to(dev)
+                emb_scales = scales.to(dev)
         else:
             embedding = ref.embedding.to(dev)
 
@@ -163,14 +175,16 @@ class PackCudaEmbed(nn.Module):
                     w_q=bl("w_q"),
                     w_k=bl("w_k"),
                     w_v=bl("w_v"),
-                    subln_attn_w=None if Lref.subln_attn_w is None else Lref.subln_attn_w.to(dev),
-                    subln_attn_b=None if Lref.subln_attn_b is None else Lref.subln_attn_b.to(dev),
+                    # getattr: fertileweb/soycaporal's unpack.py::_LayerBlocks
+                    # has no subln_* fields (v1 wire format, no sub-LN).
+                    subln_attn_w=_opt_to(getattr(Lref, "subln_attn_w", None), dev),
+                    subln_attn_b=_opt_to(getattr(Lref, "subln_attn_b", None), dev),
                     w_out=bl("w_out"),
                     ln2_w=Lref.ln2_w.to(dev),
                     ln2_b=Lref.ln2_b.to(dev),
                     fc1=bl("fc1"),
-                    subln_ffn_w=None if Lref.subln_ffn_w is None else Lref.subln_ffn_w.to(dev),
-                    subln_ffn_b=None if Lref.subln_ffn_b is None else Lref.subln_ffn_b.to(dev),
+                    subln_ffn_w=_opt_to(getattr(Lref, "subln_ffn_w", None), dev),
+                    subln_ffn_b=_opt_to(getattr(Lref, "subln_ffn_b", None), dev),
                     fc2=bl("fc2"),
                 )
             )
@@ -179,7 +193,9 @@ class PackCudaEmbed(nn.Module):
             d_model=h.d_model,
             n_heads=h.n_heads,
             output_dim=h.output_dim,
-            pos_rope=(h.pos_encoding == 1),  # POS_ROPE
+            # fertileweb/soycaporal's Header (v1) has no pos_encoding field —
+            # StudentEncoder has no positional encoding by design.
+            pos_rope=(getattr(h, "pos_encoding", 0) == 1),
             embedding=embedding,
             layers=layers,
             ln_final_w=ref.ln_final_w.to(dev),

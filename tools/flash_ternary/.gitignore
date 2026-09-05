@@ -1,5 +1,7 @@
 # Rust build
 rust/target/
+.smoke-summary.json
+summary-*.json
 
 # Python
 __pycache__/

@@ -47,12 +47,13 @@ class Trainer:
         # BitLinear shadow weights. Lambda is 1.0 when resuming past the warmup
         # boundary (start_epoch >= qat_warmup_epochs), else 0.0 for warmup.
         if cfg.enable_qat:
-            n_swapped = ternary_qat.swap(model)
+            n_swapped = ternary_qat.swap(model, backend=cfg.qat_backend, matmul=cfg.qat_matmul)
+            target = "BitLinear" if cfg.qat_backend == "bitlinear" else f"QATBitLinear[{cfg.qat_matmul}]"
             if start_epoch >= cfg.qat_warmup_epochs:
                 ternary_qat.set_lambda(model, 1.0)
-                print(f"  ↳ QAT: swapped {n_swapped} nn.Linear → BitLinear  (lambda=1, resumed past warmup)")
+                print(f"  ↳ QAT: swapped {n_swapped} nn.Linear → {target}  (lambda=1, resumed past warmup)")
             else:
-                print(f"  ↳ QAT: swapped {n_swapped} nn.Linear → BitLinear  (lambda=0, warmup mode)")
+                print(f"  ↳ QAT: swapped {n_swapped} nn.Linear → {target}  (lambda=0, warmup mode)")
 
         self.model        = model.to(device)
         self.train_loader = train_loader

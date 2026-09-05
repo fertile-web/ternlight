@@ -42,8 +42,8 @@ def main(argv: list[str] | None = None) -> int:
     )
     p.add_argument(
         "--tokenizer",
-        default=str(_REPO_ROOT / "training" / "data" / "en" / "spm-en-50k"),
-        help="HF tokenizer dir (must match bin vocab)",
+        default=str(_REPO_ROOT / "engine" / "assets"),
+        help="HF tokenizer dir (must match bin vocab) — AutoTokenizer.from_pretrained() needs a directory",
     )
     p.add_argument("--max-len", type=int, default=128)
     p.add_argument("--iters", type=int, default=30)

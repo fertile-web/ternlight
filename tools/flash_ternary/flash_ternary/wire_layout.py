@@ -1,6 +1,7 @@
 """Ternlight `.bin` wire layout ↔ FlashTernary GEMM layout.
 
-Keep in sync with ``engine/src/ternary_codec.rs``:
+Keep in sync with ``engine/src/kernels.rs`` / ``engine/src/model.rs``
+(this fork inlines the codec there — no separate codec crate):
 
 - Wire BitLinear pack: ``(out_features, in_features // 4)`` uint8
 - Flash GEMM pack:     ``(in_features // 4, out_features)`` uint8

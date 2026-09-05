@@ -52,9 +52,15 @@ def test_rust_matmul_if_built():
     Bp = pack_ternary(W)
     A = rng.standard_normal((M, K), dtype=np.float32)
     ref = A @ W
-    C = ternary_matmul(A, Bp, backend="rust", K=K)
+    # Auto SIMD treats A as BitLinear x_quant (i8). General f32 uses scalar.
+    C = ternary_matmul(A, Bp, backend="rust-scalar", K=K)
     err = float(np.max(np.abs(C - ref)))
     assert err < 1e-4 * (1 + float(np.max(np.abs(ref)))), err
+    A_i8 = np.clip(np.rint(A), -128, 127).astype(np.float32)
+    ref_i8 = A_i8 @ W
+    C_s = ternary_matmul(A_i8, Bp, backend="rust-simd", K=K)
+    err_s = float(np.max(np.abs(C_s - ref_i8)))
+    assert err_s < 1e-3 * (1 + float(np.max(np.abs(ref_i8)))), err_s
 
 
 def test_wire_layout_transpose_roundtrip():
@@ -71,9 +77,9 @@ def test_fast_spm_parity_with_hf():
     import os
 
     repo_root = Path(os.environ.get("TERNLIGHT_REPO") or Path(__file__).resolve().parents[3])
-    tok_dir = repo_root / "training" / "data" / "en" / "spm-en-50k"
+    tok_dir = repo_root / "engine" / "assets"
     if not (tok_dir / "tokenizer.json").is_file():
-        pytest.skip("spm-en-50k not present")
+        pytest.skip("engine/assets/tokenizer.json not present")
     try:
         from transformers import AutoTokenizer
     except ImportError:
@@ -82,6 +88,11 @@ def test_fast_spm_parity_with_hf():
     from flash_ternary.spm_tok import FastSpmTokenizer
 
     hf = AutoTokenizer.from_pretrained(str(tok_dir))
+    if hf.pad_token is None:
+        # engine/assets ships tokenizer.json only (no tokenizer_config.json);
+        # [PAD] is id 0 in the vocab (added_tokens_decoder) but AutoTokenizer
+        # needs it named explicitly to allow padding=True below.
+        hf.pad_token = "[PAD]"
     ft = FastSpmTokenizer.from_pretrained(tok_dir)
     qs = [
         "BitLinear ternary pack",

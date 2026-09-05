@@ -15,7 +15,18 @@ Why the projection layer is excluded:
     params, <1% of model) and quantization-sensitive — the postmortem
     (docs/training/postmortem-bitlinear-asymmetry.md) confirmed keeping it
     in fp32 is the locked decision.
+
+Backend switch (`swap(..., backend=...)`):
+    "bitlinear" (default) — schneiderkamplab/bitlinear, as above.
+    "flash_qat" — tools/flash_ternary's QATBitLinear (shadow fp32 + STE,
+        same math contract, with an optional 2-bit-pack matmul on the train
+        path via `matmul="pack"`). Opt-in only (`TrainConfig.qat_backend`);
+        the default training path never imports tools/flash_ternary. See
+        tools/flash_ternary/README.md.
 """
+
+import sys
+from pathlib import Path
 
 import torch
 import torch.nn as nn
@@ -27,32 +38,68 @@ from bitlinear import BitLinear, replace_modules, set_lambda_
 _SWAP_PATTERN = r"^(?!.*projection)"
 
 
-def swap(model: nn.Module) -> int:
-    """Replace every nn.Linear in the model with a BitLinear, except the
-    output projection. Sets lambda=0 (warmup mode) so the first epochs train
-    in pass-through mode before ternary kicks in.
+def _flash_qat_module():
+    """Lazy-import tools/flash_ternary.qat. Kept out of the top-level imports
+    so the default (backend="bitlinear") training path has zero dependency
+    on tools/flash_ternary — it's only touched when a config opts in.
+    """
+    try:
+        import flash_ternary.qat as flash_qat
+    except ImportError:
+        tools_dir = Path(__file__).resolve().parents[2] / "tools" / "flash_ternary"
+        if str(tools_dir) not in sys.path:
+            sys.path.insert(0, str(tools_dir))
+        import flash_ternary.qat as flash_qat
+    return flash_qat
 
-    The fp32 weights are preserved — BitLinear's internal weight Parameter
+
+def _is_flash_qat_model(model: nn.Module) -> bool:
+    # Name check (not isinstance) so this never forces the lazy import above.
+    return any(type(m).__name__ == "QATBitLinear" for m in model.modules())
+
+
+def swap(model: nn.Module, *, backend: str = "bitlinear", matmul: str = "dense") -> int:
+    """Replace every nn.Linear in the model with a ternary-QAT layer, except
+    the output projection. Sets lambda=0 (warmup mode) so the first epochs
+    train in pass-through mode before ternary kicks in.
+
+    The fp32 weights are preserved — the swapped layer's weight Parameter
     inherits the values from the original nn.Linear. These become the
     "shadow weights" that the optimizer updates during QAT.
 
+    `backend="bitlinear"` (default): schneiderkamplab/bitlinear's BitLinear.
+    `backend="flash_qat"`: flash_ternary.qat.QATBitLinear; `matmul` selects
+        `"dense"` (reference F.linear) or `"pack"` (2-bit codec + matmul,
+        exercises the same wire format the engine ships).
+
     Returns the number of layers swapped (sanity check: expect 12 for micro).
     """
-    replace_modules(model, match_name=_SWAP_PATTERN)
-    set_lambda_(model, 0.0)
-    return sum(1 for m in model.modules() if isinstance(m, BitLinear))
+    if backend == "bitlinear":
+        replace_modules(model, match_name=_SWAP_PATTERN)
+        set_lambda_(model, 0.0)
+        return sum(1 for m in model.modules() if isinstance(m, BitLinear))
+    if backend == "flash_qat":
+        flash_qat = _flash_qat_module()
+        return flash_qat.swap_to_qat_bitlinear(
+            model, matmul=matmul, lambda_=0.0, match_name=_SWAP_PATTERN
+        )
+    raise ValueError(f"unknown qat backend {backend!r} (expected 'bitlinear' or 'flash_qat')")
 
 
 def set_lambda(model: nn.Module, value: float) -> None:
-    """Set the QAT lambda on every BitLinear in the model.
+    """Set the QAT lambda on every ternary-QAT layer in the model (either
+    backend — auto-detected from what `swap()` put there).
 
-    lambda=0 → BitLinear acts as pass-through (no weight quantization). Used
-              during the QAT warmup epochs.
+    lambda=0 → pass-through (no weight quantization). Used during the QAT
+              warmup epochs.
     lambda=1 → full ternary forward. Weights snap to {-1, 0, +1} on every
               forward pass; backward via Straight-Through Estimator updates
               the underlying fp32 shadow weights.
     """
-    set_lambda_(model, value)
+    if _is_flash_qat_model(model):
+        _flash_qat_module().set_lambda_(model, value)
+    else:
+        set_lambda_(model, value)
 
 
 def zero_fractions(model: nn.Module) -> dict[str, float]:
@@ -67,9 +114,10 @@ def zero_fractions(model: nn.Module) -> dict[str, float]:
 
     POC scaled run finished at ~44% average — borderline but recoverable.
     """
+    module_type = _flash_qat_module().QATBitLinear if _is_flash_qat_model(model) else BitLinear
     fracs: dict[str, float] = {}
     for name, module in model.named_modules():
-        if isinstance(module, BitLinear):
+        if isinstance(module, module_type):
             w = module.weight.detach()
             scale = w.abs().mean()
             fracs[name] = (w.abs() < 0.5 * scale).float().mean().item()

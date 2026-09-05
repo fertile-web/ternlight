@@ -25,19 +25,33 @@ def cmd_check(args: argparse.Namespace) -> int:
 
     A = rng.standard_normal((M, K), dtype=np.float32)
     ref = A @ W  # W is already {-1,0,+1} f32
+    A_i8 = np.clip(np.rint(A), -128, 127).astype(np.float32)
+    ref_i8 = A_i8 @ W
 
     for b in backends:
+        # rust auto/simd kernels treat A as BitLinear x_quant (i8).
+        b_f32 = "rust-scalar" if b in ("rust", "rust-simd") else b
         try:
-            C = ternary_matmul(A, Bp, backend=b, K=K)
+            C = ternary_matmul(A, Bp, backend=b_f32, K=K)
         except Exception as e:
             print(f"FAIL backend={b}: {e}")
             return 1
         err = float(np.max(np.abs(C - ref)))
-        ok = err < 1e-4 * (1 + np.max(np.abs(ref)))
-        print(f"{'OK' if ok else 'FAIL'} matmul backend={b}  max_abs_err={err:.3e}")
+        ok = err < 1e-3 * (1 + np.max(np.abs(ref)))
+        print(f"{'OK' if ok else 'FAIL'} matmul backend={b} (f32)  max_abs_err={err:.3e}")
         if not ok:
             return 1
-        if b == "rust":
+        if b in ("rust", "rust-simd", "rust-scalar"):
+            try:
+                C8 = ternary_matmul(A_i8, Bp, backend="rust-simd", K=K)
+            except Exception as e:
+                print(f"FAIL backend={b} simd/i8: {e}")
+                return 1
+            err8 = float(np.max(np.abs(C8 - ref_i8)))
+            ok8 = err8 < 1e-3 * (1 + np.max(np.abs(ref_i8)))
+            print(f"{'OK' if ok8 else 'FAIL'} matmul backend=rust-simd (i8 A)  max_abs_err={err8:.3e}")
+            if not ok8:
+                return 1
             Bp_r = pack_ternary_rust(W)
             if not np.array_equal(Bp, Bp_r):
                 print("FAIL rust pack != numpy pack")

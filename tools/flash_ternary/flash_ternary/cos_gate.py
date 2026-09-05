@@ -11,7 +11,7 @@ Exit codes:
 
 Env (overridable by CLI):
   TERNLIGHT_EN_BIN / --bin
-  TERNLIGHT_TOKENIZER / --tok   (default spm-en-50k)
+  TERNLIGHT_TOKENIZER / --tok   (default engine/assets)
   TERNLIGHT_CKPT / --ckpt       optional pytorch arm
   RAG_FLASH_BACKEND             blas|rust|… for pack_cpu arm
   FLASH_COS_MIN                 default 0.999
@@ -37,7 +37,7 @@ _DEFAULT_BIN = Path(
 _DEFAULT_TOK = Path(
     os.environ.get(
         "TERNLIGHT_TOKENIZER",
-        str(_REPO_ROOT / "training" / "data" / "en" / "spm-en-50k"),
+        str(_REPO_ROOT / "engine" / "assets"),
     )
 )
 _DEFAULT_CKPT = Path(

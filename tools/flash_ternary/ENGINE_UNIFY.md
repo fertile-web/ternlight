@@ -1,14 +1,18 @@
-# Engine ↔ FlashTernary unification
+# Engine ↔ FlashTernary unification (fertileweb/soycaporal fork)
 
-Two BitLinear runtimes share one **2-bit ternary codec** and wire layout.
+> This file describes **this** tree (`fertile-web/ternlight`, tracking
+> `soycaporal/ternlight`). Native pack GEMM is `crates/tern-ternary` +
+> `tools/flash_ternary/rust/` (not linked into WASM `engine/`). There is no
+> `bitlinear_pack` engine feature, no RoPE/sub-LN student, and no v2–v4 wire.
 
-| Path | Crate / module | Weight in RAM | Hot matmul |
+Two BitLinear runtimes share one **2-bit ternary codec** and wire layout:
+
+| Path | Module | Weight in RAM | Hot matmul |
 |---|---|---|---|
-| **Engine default** (WASM ship) | `engine` Phase A3 | pre-unpack → `i8` | `i8×i8→i32` (+ wasm SIMD) |
-| **Engine pack** | `engine` + `bitlinear_pack` | wire `u8` `(out, in/4)` | decode-once (16-entry tbl) + SIMD inner |
-| **FlashTernary CPU** | `tools/flash_ternary` | wire / Flash layout | rust: AVX-512 VNNI `dpbusd` (M&lt;64) / AVX2 FMA / NEON `tbl` |
-| **RAG pack_cpu** | `PackCpuEmbed` | same `.bin` | rust pack (default) or BLAS unpack |
-| **QAT train (v1)** | `flash_ternary.qat.QATBitLinear` | shadow fp32 + STE ternary | dense or pack matmul (codes not Parameters) |
+| **Engine** (WASM ship) | `engine/src/{kernels,model}.rs` | pre-unpack → `i8` | `kernels::bitlinear_forward` (+ wasm SIMD) |
+| **FlashTernary CPU** | `tools/flash_ternary` | wire / Flash layout | `numpy` / `torch` / `triton`(CUDA) / native Rust cdylib |
+| **RAG pack_cpu** | `flash_ternary.cpu_embed.PackCpuEmbed` | same `.bin` | numpy/torch backend (`blas` is the CPU default when no rust cdylib) |
+| **QAT train** | `training/distill/ternary_qat.py` | shadow fp32 + STE | `bitlinear` lib (default) or `flash_ternary.qat.QATBitLinear` (`qat_backend: flash_qat`) |
 
 ## Shared encoding (single source of truth)
 
@@ -22,111 +26,63 @@ Codes (2 bits / weight, 4 / byte along `in`):
 
 Keep in sync:
 
-- `engine/src/ternary_codec.rs`
+- `engine/src/kernels.rs` / `engine/src/model.rs` (WASM engine still inlines decode)
+- `crates/tern-ternary/src/codec.rs`
 - `tools/flash_ternary/flash_ternary/quant.py`
-- `tools/flash_ternary/rust/src/lib.rs`
-- `training/pack/pack.py`
+- `training/pack/pack.py` / `training/pack/unpack.py` / `training/pack/format.py`
 
-**Wire** (ternlight `.bin`): packed shape `(out_features, in_features/4)`.  
-**Flash GEMM** layout: `(in/4, out)` — transpose with `ternary_codec::wire_oi_to_flash_io`.
+**Wire** (ternlight `.bin`, v1 — `training/pack/format.py`): packed shape
+`(out_features, in_features/4)`. No `pos_encoding` / `use_subln` header
+fields — `bin_loader.py`'s parser (written for the sibling fork's v2/v3
+header) reads the v1 header's zeroed reserved bytes as `pos=0, subln=0`,
+which happens to be correct here since this fork's `StudentEncoder` really
+has neither.
+
+**Flash GEMM** layout: `(in/4, out)` — `flash_ternary/wire_layout.py` (Python)
+and `tern_ternary::wire_oi_to_flash_io` (Rust cdylib).
 
 ## Build
 
 ```bash
-# default: unpack i8 (ship / WASM)
-cargo test -p tern-engine --features emb_int4
+# engine feature gates (engine/Cargo.toml) — exactly one, mutually exclusive
+wasm-pack build --target web --features emb_int4     # ship default
+wasm-pack build --target web --features emb_ternary   # alt
 
-# pack-maintained weights (4× less BitLinear RAM)
-cargo test -p tern-engine --features emb_int4,bitlinear_pack
+# flash_ternary numpy/torch/triton need no compile
+cd tools/flash_ternary && pytest tests/ -q
 
-# FlashTernary CPU cdylib (native AVX)
+# native CPU pack GEMM (not linked into WASM engine)
 cargo build --release --manifest-path tools/flash_ternary/rust/Cargo.toml
 ```
 
-Kernel parity (no `.bin` needed):
-
-```bash
-cargo test -p tern-engine --features emb_int4 packed_matches_unpacked_bitlinear
-cargo test -p tern-engine --features emb_int4 pack_unpack_roundtrip
-```
+There is no `bitlinear_pack` engine feature and no WASM A/B pack path.
 
 ## When to use which
 
 | Scenario | Prefer |
 |---|---|
-| Small WASM embed model, W fits L2 | engine **unpack** (default) |
-| Large W / tight RAM / mobile | engine **`bitlinear_pack`** |
-| Native RAG query (prod; may co-run FlashRank) | `PackCpuEmbed` **rust** (default; no OMP fight with ONNX) |
-| Hybrid-only microbench (tiny M, no CE) | `RAG_FLASH_BACKEND=blas` (f32 GEMM after one unpack) |
+| Ship to browser (WASM) | `engine`, `emb_int4` feature (default) |
+| Server-side / bulk CPU embed via `tools/flash_ternary` | `numpy` or `torch` backend (`PackCpuEmbed`) |
+| Server-side / bulk GPU embed | `triton` backend (`PackCudaEmbed`) — needs CUDA |
+| QAT training, default | `training/distill` + `bitlinear` lib (`qat_backend: bitlinear`, default) |
+| QAT training, exercise the wire codec on the train path | `qat_backend: flash_qat`, `qat_matmul: pack` (see `configs/smoke-qat-flash.yaml`) |
 
 ## Numerics gate
 
-Pack embed cos gate (Python) already checks `PackCpuEmbed` / `PackCudaEmbed` vs
-`UnpackedModel` at cos≥0.999. Engine pack vs unpack is covered by the Rust
-unit test above (exact on synthetic ternary W).
+`tests/test_pack_embed_cos.py` checks `PackCpuEmbed` (numpy/BLAS) and
+`PackCudaEmbed` (Triton) vs `training/pack/unpack.py::UnpackedModel` at
+cos≥0.999, against a real packed `.bin` produced by `training/pack/pack.py`
+from a `training/distill` checkpoint (QAT, either backend) — this is the
+actual engine-equivalence proof on this fork, not a synthetic-tensor test.
+Needs `TERNLIGHT_EN_BIN` / `TERNLIGHT_TOKENIZER` (defaults:
+`training/pack/out/en-minilm-int4.bin`, `engine/assets`) and optionally
+`TERNLIGHT_CKPT` for the extra pytorch-BitLinear arm.
 
-## Shared crate: `crates/tern-ternary`
+## Native CPU (Rust)
 
-| feature | meaning |
-|---|---|
-| (none) | **codec only** — used by `engine` (WASM-safe) |
-| `matmul` | Flash fused GEMM |
-| `parallel` | rayon panels (implies `matmul`) |
-| `c_abi` | `flash_ternary_*` ctypes exports |
-
-```
-engine  ──default-features=false──►  tern-ternary (codec)
-flash_ternary_cpu ──matmul+parallel+c_abi──► tern-ternary
-```
-
-## WASM real machine (HTML + Node)
-
-Yes — **browser is the real machine** (`--target web`). Node can load the same artifacts headlessly.
+Self-contained cdylib (2-bit codec + GEMM only). Not linked into `engine/`.
 
 ```bash
-# build both variants (wiki-d256-3l-int4 by default)
-bash scripts/build-wasm-ab.sh
-
-# headless A/B
-node scripts/wasm-ab-bench.mjs
-
-# browser UI
-python3 -m http.server 8765 --directory dist/web-ab
-# open http://127.0.0.1:8765/
+cargo build --release --manifest-path tools/flash_ternary/rust/Cargo.toml
+python3 -m flash_ternary.cli check --backend rust
 ```
-
-### Measured (2026-08-17)
-
-`bitlinear_forward_packed` now decodes each weight row **once per forward**
-(16-entry in-register table: wasm `i8x16_swizzle`, aarch64 `vqtbl1q_s8`)
-and reuses the SIMD inner. Default feature stays **off** — WASM ship / upstream
-still prefer unpack latency; enable `bitlinear_pack` for the 4× resident RAM cut.
-
-en-minilm d512/L3/ffn2048 (BitLinear RAM 9.44 MB → 2.36 MB; cos 1.0 / native bit-identical):
-
-| build | native aarch64 | wasm 8 tok | wasm 128 tok |
-|---|---|---|---|
-| **unpack** (default) | 9.75 ms/doc | 8.87 ms | 143.6 ms |
-| **pack** (`bitlinear_pack`) | **8.65** (1.13×) | 10.25 (0.86×) | 149.5 (0.96×) |
-
-Older wiki-d256-3l wasm row (~19 ms pack vs ~3 ms unpack) is superseded.
-WASM **file** size is still nearly identical: `model.bin` is already 2-bit
-on the wire; the 4× saving is **resident weight buffers after init**.
-
-`pack_cpu` / `tern-ternary` on aarch64: NEON unpack is now `vshrq_n_u8` +
-`vqtbl1q_s8` (4.75× on the primitive). End-to-end it shows at small M
-(M=1: 0.32→0.16 ms) and is noise once unpack is amortized (M≥32).
-
-x86 (2026-08-17, Ryzen 5 7600): Auto uses **AVX-512 VNNI `dpbusd`** for
-`M < 64` (query). Same 4-K group as the unpack, i8 A (BitLinear `x_quant`)
-× i8 W → i32, one convert at the end. AVX2+FMA saxpy remains the fallback
-and the M≥64 rayon path. pshufb unpack matches the NEON table.
-
-| shape | scalar | avx2+fma (before) | avx512vnni | vs previous simd |
-|---|---:|---:|---:|---:|
-| attn M=1 | 0.088 ms | 0.019 ms | **0.012 ms** | 1.63× |
-| fc1 M=1 | 0.30 ms | 0.085 ms | **0.045 ms** | 1.60× |
-| fc2 M=1 | 0.28 ms | 0.069 ms | **0.039 ms** | 1.73× |
-
-`rust check` max_abs_err = 0 on integer A. QAT `flash_qat` pack mode is
-unchanged (still pack→unpack→dense).

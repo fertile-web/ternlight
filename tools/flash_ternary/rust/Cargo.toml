@@ -1,0 +1,24 @@
+[package]
+name = "flash_ternary_cpu"
+version = "0.1.0"
+edition = "2021"
+description = "CPU fused ternary GEMM (FlashTernary-compatible 2-bit pack) — C ABI wrapper"
+license = "MIT"
+
+# Standalone package so `cargo build --manifest-path` still works outside workspace.
+[workspace]
+
+[lib]
+name = "flash_ternary_cpu"
+crate-type = ["cdylib", "rlib"]
+
+[[bin]]
+name = "flash_ternary_cpu"
+path = "src/main.rs"
+
+[dependencies]
+tern-ternary = { path = "../../../crates/tern-ternary", features = ["matmul", "parallel", "c_abi"] }
+
+[profile.release]
+lto = true
+codegen-units = 1

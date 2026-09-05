@@ -1,0 +1,23 @@
+[package]
+name = "tern-ternary"
+version = "0.1.0"
+edition = "2021"
+license = "MIT"
+description = "Shared 2-bit ternary codec + CPU fused matmul (FlashTernary / ternlight wire)"
+repository = "https://github.com/soycaporal/ternlight"
+
+[features]
+default = ["matmul", "parallel"]
+# Fused ternary GEMM (native). Engine only needs codec — leave this off for WASM.
+matmul = []
+# rayon panel parallel matmul (native large-M).
+parallel = ["dep:rayon", "matmul"]
+# C ABI for Python ctypes (flash_ternary.matmul).
+c_abi = ["matmul"]
+
+[dependencies]
+rayon = { version = "1.10", optional = true }
+
+[lib]
+name = "tern_ternary"
+path = "src/lib.rs"

@@ -22,7 +22,7 @@ BIN = Path(
 TOK = Path(
     os.environ.get(
         "TERNLIGHT_TOKENIZER",
-        str(_REPO_ROOT / "training" / "data" / "en" / "spm-en-50k"),
+        str(_REPO_ROOT / "engine" / "assets"),
     )
 )
 CKPT = Path(
@@ -42,10 +42,12 @@ COS_MIN = float(os.environ.get("FLASH_COS_MIN", "0.999"))
 
 
 def _have_bin_tok() -> bool:
-    return BIN.is_file() and (TOK / "tokenizer.json").is_file()
+    # TOK may be a tokenizer.json file itself, or a dir that contains one.
+    tok_ok = TOK.is_file() or (TOK / "tokenizer.json").is_file()
+    return BIN.is_file() and tok_ok
 
 
-@pytest.mark.skipif(not _have_bin_tok(), reason="en-minilm bin or spm-en-50k missing")
+@pytest.mark.skipif(not _have_bin_tok(), reason="en-minilm bin or tokenizer.json missing")
 def test_pack_cpu_blas_vs_unpacked_cos():
     from flash_ternary.cos_gate import run_gate
 
@@ -67,7 +69,7 @@ def test_pack_cpu_blas_vs_unpacked_cos():
     assert r.cos >= COS_MIN
 
 
-@pytest.mark.skipif(not _have_bin_tok(), reason="en-minilm bin or spm-en-50k missing")
+@pytest.mark.skipif(not _have_bin_tok(), reason="en-minilm bin or tokenizer.json missing")
 def test_pack_cpu_rust_vs_unpacked_cos():
     from flash_ternary import available_backends
     from flash_ternary.cos_gate import run_gate
@@ -87,7 +89,7 @@ def test_pack_cpu_rust_vs_unpacked_cos():
     assert r.ok, f"{r.name} cos={r.cos} {r.detail}"
 
 
-@pytest.mark.skipif(not _have_bin_tok(), reason="en-minilm bin or spm-en-50k missing")
+@pytest.mark.skipif(not _have_bin_tok(), reason="en-minilm bin or tokenizer.json missing")
 def test_pack_cuda_vs_unpacked_cos():
     torch = pytest.importorskip("torch")
     if not torch.cuda.is_available():
