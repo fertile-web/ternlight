@@ -1,0 +1,120 @@
+{
+  "ok": true,
+  "device": "cpu",
+  "steps": 10,
+  "batch": 8,
+  "seq": 32,
+  "lr": 0.001,
+  "seed": 0,
+  "counts": {
+    "lib": {
+      "BitLinear": 12,
+      "QATBitLinear": 0,
+      "Linear": 1
+    },
+    "dense": {
+      "BitLinear": 0,
+      "QATBitLinear": 12,
+      "Linear": 1
+    },
+    "pack": {
+      "BitLinear": 0,
+      "QATBitLinear": 12,
+      "Linear": 1
+    },
+    "swapped": {
+      "lib": 12,
+      "dense": 12,
+      "pack": 12
+    }
+  },
+  "forward": {
+    "cos_dense_vs_lib": 1.0000001192092896,
+    "cos_pack_vs_lib": 1.0000001192092896,
+    "cos_pack_vs_dense": 1.0000001192092896,
+    "max_abs_dense_vs_lib": 0.0,
+    "max_abs_pack_vs_lib": 0.0,
+    "max_abs_pack_vs_dense": 0.0
+  },
+  "train": {
+    "lib": {
+      "loss_first": 0.9384808540344238,
+      "loss_last": 0.7978952527046204,
+      "loss_min": 0.777642548084259,
+      "seconds": 0.2622475310054142,
+      "steps_per_s": 38.13191285981467
+    },
+    "dense": {
+      "loss_first": 0.9384808540344238,
+      "loss_last": 0.7995495200157166,
+      "loss_min": 0.778957724571228,
+      "seconds": 0.06576090399903478,
+      "steps_per_s": 152.06603607740516
+    },
+    "pack": {
+      "loss_first": 0.9384808540344238,
+      "loss_last": 0.7995495200157166,
+      "loss_min": 0.778957724571228,
+      "seconds": 0.08480152999982238,
+      "steps_per_s": 117.92240069278166
+    },
+    "loss_curve_lib": [
+      0.9384808540344238,
+      0.9488350749015808,
+      0.977571964263916,
+      0.8791909217834473,
+      0.8853402137756348,
+      0.9354907870292664,
+      0.777642548084259,
+      0.8538793325424194,
+      0.7983406186103821,
+      0.7978952527046204
+    ],
+    "loss_curve_dense": [
+      0.9384808540344238,
+      0.9489476680755615,
+      0.9777045845985413,
+      0.8787803649902344,
+      0.8858861327171326,
+      0.9348015785217285,
+      0.778957724571228,
+      0.8537867665290833,
+      0.7985526323318481,
+      0.7995495200157166
+    ],
+    "loss_curve_pack": [
+      0.9384808540344238,
+      0.9489476680755615,
+      0.9777045845985413,
+      0.8787803649902344,
+      0.8858861327171326,
+      0.9348015785217285,
+      0.778957724571228,
+      0.8537867665290833,
+      0.7985526323318481,
+      0.7995495200157166
+    ],
+    "param_l1_dense_vs_lib": 3.268915509491513e-05,
+    "param_l1_pack_vs_lib": 3.268915509491513e-05,
+    "param_l1_pack_vs_dense": 0.0,
+    "zero_frac_mean_lib": 0.248260498046875,
+    "zero_frac_mean_dense": 0.24820963541666666,
+    "zero_frac_mean_pack": 0.24820963541666666
+  },
+  "loss_rel_dense": 0.002073288825179411,
+  "loss_rel_pack": 0.002073288825179411,
+  "gates": {
+    "fwd_cos_dense": true,
+    "fwd_cos_pack": true,
+    "fwd_cos_pack_dense": true,
+    "fwd_max_abs_dense": true,
+    "fwd_max_abs_pack": true,
+    "train_loss_decreased_lib": true,
+    "train_loss_decreased_dense": true,
+    "train_loss_decreased_pack": true,
+    "train_loss_rel_dense": true,
+    "train_loss_rel_pack": true,
+    "swapped_equal": true
+  },
+  "gates_failed": []
+}

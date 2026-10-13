@@ -17,10 +17,10 @@ wandb_tags:
 eval:
   # Update these paths after training finishes. ep40 is the end-of-run ckpt;
   # if it doesn't converge, swap to the best checkpoint by val_spearman.
-  ckpt_path:          runs/qat-resume-ep10-22ed6bc/checkpoint_ep40.pt
+  ckpt_path:          runs/qat-baseline-a730627/checkpoint_ep40.pt
 
   # Phase 2 fp32 baseline (the ceiling — what the architecture can do unconstrained)
-  baseline_ckpt_path: runs/fp32-baseline-662956d/checkpoint_ep25.pt
+  baseline_ckpt_path: runs/fp32-baseline-a730627/checkpoint_ep40.pt
 
   # Test split (same prep cache as training; uses the held-out test partition)
   cache_dir:          cache

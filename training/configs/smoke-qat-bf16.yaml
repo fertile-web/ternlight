@@ -1,0 +1,41 @@
+# H41 QAT smoke — validates bf16 autocast under enable_qat=true (plain
+# BitLinear, NOT qat_learnable_scale/M2 — that path has a genuinely custom
+# autograd.Function and needs its own separate check). Run alongside
+# smoke-qat-fp32.yaml and diff the losses before trusting a real QAT+bf16 run.
+
+wandb_project: ternlight-micro
+wandb_group: smoke
+wandb_tags:
+  - tier:micro
+  - phase:smoke
+  - mode:qat-bf16
+  - hyp:H41
+
+train:
+  vocab_size: 50000
+  d_model: 256
+  n_layers: 2
+  n_heads: 4
+  ffn_dim: 1024
+  output_dim: 384
+  dropout: 0.1
+
+  cache_dir: cache
+  cache_name: code_search_net_py_20k_minilm
+
+  epochs: 1
+  batch_size: 32
+  lr: 1.0e-4
+  weight_decay: 0.01
+  lr_warmup_ratio: 0.10
+  grad_clip: 1.0
+
+  enable_qat: true
+  qat_warmup_epochs: 0
+  contrastive_w: 0.0
+
+  amp_dtype: bf16
+
+  run_name: smoke-qat-bf16
+  runs_dir: runs
+  save_every: 2

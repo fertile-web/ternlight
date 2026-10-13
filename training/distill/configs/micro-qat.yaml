@@ -53,3 +53,4 @@ train:
   runs_dir: runs
   save_every: 2             # finer curve resolution than Phase 2 — QAT trajectory is more interesting
   log_every_n_steps: 100
+  init_from: runs/fp32-baseline-a730627/checkpoint_ep40.pt

@@ -13,7 +13,7 @@ data:
   sources:
     # 60% — real search queries; what users actually type into a search bar.
     - name: ms_marco
-      hf_dataset: ms_marco
+      hf_dataset: microsoft/ms_marco
       hf_config: v2.1
       split: train
       text_field: query

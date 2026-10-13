@@ -1,0 +1,48 @@
+# H132 continuation after the 1-epoch gate probe.
+# MiniLM teacher remains fixed; Qwen EN pair data is intentionally excluded.
+
+wandb_project: ternlight-en
+wandb_group: h132-en-minilm-pair
+wandb_tags: [tier:large, phase:en-fp32, exp:minilm-teacher, exp:pair-infonce, exp:pair-score, hyp:H132, continuation:ep1-to-12]
+
+train:
+  vocab_size: 50000
+  d_model: 512
+  n_layers: 3
+  n_heads: 8
+  ffn_dim: 2048
+  output_dim: 384
+  dropout: 0.1
+  seed: 1
+  use_subln: false
+  use_gated_residual: true
+  gr_branches: 2
+
+  cache_dir: /smb/ternlight/training/distill/cache
+  cache_name: en_msmarcomix_1M_minilm_pairs
+
+  epochs: 12
+  batch_size: 64
+  lr: 1.0e-4
+  weight_decay: 0.01
+  lr_warmup_ratio: 0.10
+  grad_clip: 1.0
+
+  enable_qat: false
+  contrastive_w: 0.0
+  relational_w: 0.0
+  distill_w: 1.0
+  pair_w: 0.0
+  pair_infonce_w: 1.0
+  pair_score_w: 0.5
+
+  pos_encoding: rope
+  run_name: en-fp32-L3w512-rope-h132-minilm-pair-12ep
+  runs_dir: /smb/ternlight/training/distill/runs
+  save_every: 1
+  log_every_n_steps: 200
+  eval_every: 1
+
+  # The probe was configured as a one-epoch run, so its scheduler is already
+  # at LR=0.  Carry over weights only and build a fresh 12-epoch schedule.
+  init_from: /smb/ternlight/training/distill/runs/en-fp32-L3w512-rope-h132-minilm-pair-probe-ed0a90e/checkpoint_ep1.pt
